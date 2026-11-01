@@ -43,7 +43,7 @@ def init_db():
                 ghi_chu TEXT
             )
         """)
-
+init_db()
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="vi">
