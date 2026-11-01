@@ -14,7 +14,7 @@ from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 
 app = Flask(__name__)
-app.secret_key = "lab_records_secret_bvqy175_auth_key_v6"
+app.secret_key = "lab_records_secret_bvqy175_auth_key_v7"
 DB_NAME = "lab_records.db"
 
 def get_db():
@@ -70,7 +70,6 @@ def init_db():
             conn.execute("INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, ?)",
                          ("nhanvien", default_pwd, "Kỹ thuật viên Trực", "staff"))
 
-# Gọi tạo bảng ngay tại tầng module
 init_db()
 
 def login_required(f):
@@ -85,7 +84,7 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if session.get("role") != "admin":
-            flash("Chỉ quản trị viên mới có quyền thực hiện thao tác này!", "danger")
+            flash("Chỉ quản trị viên mới có quyền truy cập mục quản lý thành viên!", "danger")
             return redirect(url_for("index"))
         return f(*args, **kwargs)
     return decorated_function
@@ -195,7 +194,11 @@ MAIN_TEMPLATE = """
         <div class="d-flex align-items-center gap-2">
             <div class="text-end me-2">
                 <span class="fw-bold d-block">{{ session.get('full_name') }}</span>
-                <span class="badge bg-secondary small">Quyền: {{ session.get('role') }}</span>
+                {% if session.get('role') == 'admin' %}
+                <span class="badge bg-danger small">Quyền: Quản trị viên</span>
+                {% else %}
+                <span class="badge bg-secondary small">Quyền: Kỹ thuật viên</span>
+                {% endif %}
             </div>
             <button class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#changePassModal">
                 <i class="bi bi-key me-1"></i>Đổi mật khẩu
@@ -226,11 +229,14 @@ MAIN_TEMPLATE = """
                 📞 Sổ Trao Đổi Thông Tin (SP.01-QTQL.SH.16)
             </button>
         </li>
+        <!-- Chỉ Quản trị viên (admin) mới hiển thị tab Quản lý thành viên -->
+        {% if session.get('role') == 'admin' %}
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="tab-users-btn" data-bs-toggle="tab" data-bs-target="#tab-users" type="button">
                 👥 Quản Lý Thành Viên & Mật Khẩu
             </button>
         </li>
+        {% endif %}
     </ul>
 
     <div class="tab-content" id="labTabsContent">
@@ -454,13 +460,13 @@ MAIN_TEMPLATE = """
             </div>
         </div>
 
-        <!-- TAB 3: QUẢN LÝ THÀNH VIÊN & MẬT KHẨU -->
+        <!-- TAB 3: QUẢN LÝ THÀNH VIÊN & MẬT KHẨU (CHỈ HIỂN THỊ VỚI ADMIN) -->
+        {% if session.get('role') == 'admin' %}
         <div class="tab-pane fade" id="tab-users" role="tabpanel">
             <div class="row">
                 <div class="col-lg-4 mb-3">
                     <div class="card p-3">
                         <h6 class="fw-bold text-success mb-3"><i class="bi bi-person-plus-fill me-1"></i>Tạo Tài Khoản Thành Viên Mới</h6>
-                        {% if session.get('role') == 'admin' %}
                         <form method="POST" action="/create_user">
                             <div class="mb-2">
                                 <label class="form-label small fw-bold">Họ và tên nhân viên</label>
@@ -483,11 +489,6 @@ MAIN_TEMPLATE = """
                             </div>
                             <button type="submit" class="btn btn-success w-100 fw-bold"><i class="bi bi-check-circle me-1"></i>Tạo Tài Khoản</button>
                         </form>
-                        {% else %}
-                        <div class="alert alert-warning small mb-0">
-                            <i class="bi bi-info-circle me-1"></i>Tính năng tạo tài khoản mới chỉ dành cho tài khoản <strong>Quản trị viên (admin)</strong>. Bạn đang đăng nhập bằng quyền nhân viên.
-                        </div>
-                        {% endif %}
                     </div>
                 </div>
 
@@ -521,12 +522,10 @@ MAIN_TEMPLATE = """
                                             {% endif %}
                                         </td>
                                         <td class="text-center text-nowrap">
-                                            {% if session.get('role') == 'admin' or session.get('username') == u.username %}
                                             <button class="btn btn-sm btn-outline-warning py-0 px-2" data-bs-toggle="modal" data-bs-target="#adminResetModal{{ u.id }}">
                                                 <i class="bi bi-key-fill"></i> Đổi MK
                                             </button>
-                                            {% endif %}
-                                            {% if session.get('role') == 'admin' and u.username != 'admin' and u.username != session.get('username') %}
+                                            {% if u.username != 'admin' and u.username != session.get('username') %}
                                             <a href="/delete_user/{{ u.id }}" class="btn btn-sm btn-outline-danger py-0 px-2 ms-1" onclick="return confirm('Bạn có chắc chắn muốn xóa tài khoản {{ u.username }} không?');">
                                                 <i class="bi bi-trash"></i>
                                             </a>
@@ -565,6 +564,7 @@ MAIN_TEMPLATE = """
                 </div>
             </div>
         </div>
+        {% endif %}
     </div>
 </div>
 
@@ -604,7 +604,7 @@ MAIN_TEMPLATE = """
     if (window.location.hash === '#tab-td') {
         const tabTrigger = new bootstrap.Tab(document.querySelector('#tab-td-btn'));
         tabTrigger.show();
-    } else if (window.location.hash === '#tab-users') {
+    } else if (window.location.hash === '#tab-users' && document.querySelector('#tab-users-btn')) {
         const tabTrigger = new bootstrap.Tab(document.querySelector('#tab-users-btn'));
         tabTrigger.show();
     }
@@ -725,7 +725,7 @@ def generate_word_canh_bao_fallback(rows):
             p.paragraph_format.space_after = Pt(2)
             p.paragraph_format.space_before = Pt(2)
             run = p.add_run(val)
-            run.font.size = Pt(9)
+            run.font.size = Pt(13)  # Cỡ chữ 13
             run.font.name = "Times New Roman"
             if c_idx == 8:
                 run.bold = True
@@ -736,13 +736,13 @@ def generate_word_canh_bao_fallback(rows):
     buf.seek(0)
     return buf
 
-# Xuất Word Sổ Cảnh Báo: NẠP VÀO TEMPLATE GỐC template_canh_bao.docx
+# Xuất Word Sổ Cảnh Báo: Nạp vào template gốc template_canh_bao.docx
 def generate_word_canh_bao(rows):
     template_path = "template_canh_bao.docx"
     
     if os.path.exists(template_path):
         doc = docx.Document(template_path)
-        table = doc.tables[1] # Bảng số 1 là bảng chứa dữ liệu
+        table = doc.tables[1]
     else:
         return generate_word_canh_bao_fallback(rows)
 
@@ -775,7 +775,7 @@ def generate_word_canh_bao(rows):
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             for run in p.runs:
                 run.font.name = "Times New Roman"
-                run.font.size = Pt(9)
+                run.font.size = Pt(13)  # Cỡ chữ 13
                 if c_idx == 8: # Kết quả báo cáo in đậm
                     run.bold = True
 
@@ -873,7 +873,7 @@ def generate_word_trao_doi_fallback(rows):
             p.paragraph_format.space_after = Pt(2)
             p.paragraph_format.space_before = Pt(2)
             run = p.add_run(val)
-            run.font.size = Pt(9)
+            run.font.size = Pt(13)  # Cỡ chữ 13
             run.font.name = "Times New Roman"
             set_cell_margins(row_cells[c_idx], top=60, bottom=60, left=80, right=80)
 
@@ -882,7 +882,7 @@ def generate_word_trao_doi_fallback(rows):
     buf.seek(0)
     return buf
 
-# Xuất Word Sổ Trao Đổi: NẠP VÀO TEMPLATE GỐC template_trao_doi.docx (9 cột)
+# Xuất Word Sổ Trao Đổi: Nạp vào template gốc template_trao_doi.docx (9 cột)
 def generate_word_trao_doi(rows):
     template_path = "template_trao_doi.docx"
     
@@ -921,7 +921,7 @@ def generate_word_trao_doi(rows):
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             for run in p.runs:
                 run.font.name = "Times New Roman"
-                run.font.size = Pt(9)
+                run.font.size = Pt(13)  # Cỡ chữ 13
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -1033,7 +1033,7 @@ def add_trao_doi():
         flash("✅ Đã lưu cuộc trao đổi thông tin thành công!", "success")
     return redirect(url_for("index") + "#tab-td")
 
-# ----------------- QUẢN LÝ TÀI KHOẢN & MẬT KHẨU -----------------
+# ----------------- QUẢN LÝ TÀI KHOẢN & MẬT KHẨU (CHỈ ADMIN) -----------------
 
 @app.route("/create_user", methods=["POST"])
 @login_required
@@ -1093,17 +1093,14 @@ def change_own_password():
 
 @app.route("/reset_user_password", methods=["POST"])
 @login_required
+@admin_required
 def reset_user_password():
     target_id = request.form.get("user_id")
     new_pwd = request.form.get("new_password", "").strip()
 
-    if session.get("role") != "admin" and str(session.get("user_id")) != str(target_id):
-        flash("Bạn không có quyền đổi mật khẩu của tài khoản này!", "danger")
-        return redirect(url_for("index") + "#tab-users")
-
     if len(new_pwd) < 6:
         flash("Mật khẩu mới phải có ít nhất 6 ký tự!", "danger")
-        return redirect(url_for("index"))
+        return redirect(url_for("index") + "#tab-users")
 
     new_hash = generate_password_hash(new_pwd)
     with get_db() as conn:
