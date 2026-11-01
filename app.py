@@ -738,82 +738,19 @@ def generate_word_canh_bao(rows):
 
 # Xuất Word sổ Trao Đổi: TỰ ĐỘNG NẠP TRỰC TIẾP TỪ TEMPLATE NẾU CÓ
 def generate_word_trao_doi(rows):
-    template_file = "template_trao_doi.docx"
+    template_path = "template_trao_doi.docx"
     
-    if os.path.exists(template_file):
-        doc = docx.Document(template_file)
-        tbl = doc.tables[1]
+    # 1. Mở trực tiếp file Word mẫu gốc nếu có trên thư mục
+    if os.path.exists(template_path):
+        doc = docx.Document(template_path)
+        table = doc.tables[1] # Bảng số 1 là bảng chứa 10 cột dữ liệu
     else:
-        # Nếu chưa upload file template, tạo động theo đúng quy cách
-        doc = docx.Document()
-        section = doc.sections[0]
-        section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
-        section.page_width = Inches(11.69)
-        section.page_height = Inches(8.27)
-        section.top_margin = Inches(0.5)
-        section.bottom_margin = Inches(0.5)
-        section.left_margin = Inches(0.5)
-        section.right_margin = Inches(0.5)
+        # Nếu chưa tìm thấy file template thì dùng hàm tạo khung dự phòng
+        return generate_word_trao_doi_fallback(rows)
 
-        p_header = doc.add_paragraph()
-        p_header.paragraph_format.space_after = Pt(2)
-        p_header.paragraph_format.line_spacing = 1.0
-        r1 = p_header.add_run("BỘ QUỐC PHÒNG\nBỆNH VIỆN QUÂN Y 175\n")
-        r1.bold = True
-        r1.font.size = Pt(11)
-        r1.font.name = "Times New Roman"
-
-        tbl_top = doc.add_table(rows=1, cols=2)
-        tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
-        tbl_top.autofit = False
-        
-        cell_left = tbl_top.cell(0, 0)
-        cell_left.width = Inches(7.0)
-        p_title = cell_left.paragraphs[0]
-        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r_t1 = p_title.add_run("SỔ TRAO ĐỔI THÔNG TIN\n")
-        r_t1.bold = True
-        r_t1.font.size = Pt(14)
-        r_t1.font.name = "Times New Roman"
-        r_t2 = p_title.add_run("Từ ngày: ……/……/20…   Đến ngày: ……/……/20…\nNgười quản lý sổ: …………………………………")
-        r_t2.font.size = Pt(11)
-        r_t2.italic = True
-        r_t2.font.name = "Times New Roman"
-
-        cell_right = tbl_top.cell(0, 1)
-        cell_right.width = Inches(3.6)
-        p_code = cell_right.paragraphs[0]
-        p_code.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        r_code = p_code.add_run("Mã số            : SP.01-QTQL.SH.16\nLần ban hành : 01\nNgày hiệu lực : 02/01/2024")
-        r_code.font.size = Pt(10)
-        r_code.font.name = "Times New Roman"
-
-        doc.add_paragraph().paragraph_format.space_after = Pt(4)
-
-        headers = ["STT", "NGÀY/ GIỜ", "NGƯỜI GỌI", "NGƯỜI NGHE", "HỌ TÊN BỆNH NHÂN", "KHOA", "NỘI DUNG TRAO ĐỔI", "YÊU CẦU", "KẾT QUẢ TRAO ĐỔI", "GHI CHÚ"]
-        col_widths = [Inches(0.5), Inches(1.1), Inches(1.1), Inches(1.1), Inches(1.4), Inches(0.9), Inches(1.6), Inches(1.3), Inches(1.2), Inches(0.5)]
-        
-        tbl = doc.add_table(rows=1, cols=10)
-        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-        set_table_borders(tbl)
-
-        hdr_cells = tbl.rows[0].cells
-        for i, title in enumerate(headers):
-            hdr_cells[i].width = col_widths[i]
-            p = hdr_cells[i].paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.paragraph_format.space_after = Pt(2)
-            p.paragraph_format.space_before = Pt(2)
-            run = p.add_run(title)
-            run.bold = True
-            run.font.size = Pt(9.5)
-            run.font.name = "Times New Roman"
-            set_cell_margins(hdr_cells[i], top=80, bottom=80, left=80, right=80)
-
-    # Đổ các dòng dữ liệu vào bảng
-    col_widths = [Inches(0.5), Inches(1.1), Inches(1.1), Inches(1.1), Inches(1.4), Inches(0.9), Inches(1.6), Inches(1.3), Inches(1.2), Inches(0.5)]
+    # 2. Đổ từng dòng dữ liệu từ webapp vào bảng của file mẫu
     for idx, r in enumerate(rows):
-        row_cells = tbl.add_row().cells
+        new_row = table.add_row()
         vals = [
             str(idx + 1),
             r["ngay_gio"] or "",
@@ -827,19 +764,21 @@ def generate_word_trao_doi(rows):
             r["ghi_chu"] or ""
         ]
         for c_idx, val in enumerate(vals):
-            row_cells[c_idx].width = col_widths[c_idx]
-            p = row_cells[c_idx].paragraphs[0]
+            cell = new_row.cells[c_idx]
+            cell.text = str(val)
+            p = cell.paragraphs[0]
+            # Căn giữa cho các cột STT, Ngày/giờ, Khoa; các cột khác căn trái
             if c_idx in [0, 1, 5]:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
             else:
-                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p.paragraph_format.space_after = Pt(2)
-            p.paragraph_format.space_before = Pt(2)
-            run = p.add_run(val)
-            run.font.size = Pt(9)
-            run.font.name = "Times New Roman"
-            set_cell_margins(row_cells[c_idx], top=60, bottom=60, left=80, right=80)
+                p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.LEFT
+            
+            # Định dạng font chữ đồng bộ theo mẫu
+            for run in p.runs:
+                run.font.name = "Times New Roman"
+                run.font.size = docx.shared.Pt(9)
 
+    # 3. Xuất file ra bộ nhớ để tải về
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
