@@ -18,7 +18,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 app = Flask(__name__)
-app.secret_key = "lab_records_secret_bvqy175_auth_key_v9"
+app.secret_key = "lab_records_secret_bvqy175_auth_key_v10"
 DB_NAME = "lab_records.db"
 
 def get_db():
@@ -65,6 +65,21 @@ def init_db():
                 ghi_chu TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tu_choi (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                thoi_gian TEXT,
+                ten_benh_nhan TEXT,
+                nam_sinh_nam TEXT,
+                nam_sinh_nu TEXT,
+                khoa TEXT,
+                ly_do TEXT,
+                cach_xu_ly TEXT,
+                nguoi_nhan TEXT,
+                nguoi_gui TEXT,
+                ghi_chu TEXT
+            )
+        """)
         
         user = conn.execute("SELECT * FROM users WHERE username = 'admin'").fetchone()
         if not user:
@@ -98,15 +113,7 @@ def sync_canh_bao_to_trao_doi(conn, ngay_gio, nguoi_bc, nguoi_nhan, ten_bn, khoa
         INSERT INTO trao_doi (ngay_gio, nguoi_goi, nguoi_nghe, ten_benh_nhan, khoa, noi_dung, yeu_cau, ket_qua, ghi_chu)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        ngay_gio,
-        nguoi_bc,
-        nguoi_nhan,
-        ten_bn,
-        khoa,
-        ket_qua_cb,
-        noi_dung_cb,
-        ghi_chu_cb,
-        "Đồng bộ từ Sổ Cảnh Báo"
+        ngay_gio, nguoi_bc, nguoi_nhan, ten_bn, khoa, ket_qua_cb, noi_dung_cb, ghi_chu_cb, "Đồng bộ từ Sổ Cảnh Báo"
     ))
 
 def parse_date_str(val):
@@ -114,15 +121,8 @@ def parse_date_str(val):
         return None
     val = str(val).strip()
     for fmt in (
-        "%d/%m/%y %H:%M:%S",
-        "%d/%m/%y %H:%M",
-        "%d/%m/%Y %H:%M:%S",
-        "%d/%m/%Y %H:%M",
-        "%d/%m/%Y",
-        "%d/%m/%y",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-        "%d-%m-%Y"
+        "%d/%m/%y %H:%M:%S", "%d/%m/%y %H:%M", "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M", "%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d-%m-%Y"
     ):
         try:
             return datetime.strptime(val.split()[0], fmt.split()[0]).date()
@@ -130,7 +130,7 @@ def parse_date_str(val):
             continue
     return None
 
-def filter_records_by_date(rows, from_date_str, to_date_str):
+def filter_records_by_date(rows, from_date_str, to_date_str, date_field="ngay_gio"):
     if not from_date_str and not to_date_str:
         return rows
     d_from = datetime.strptime(from_date_str, "%Y-%m-%d").date() if from_date_str else None
@@ -138,7 +138,7 @@ def filter_records_by_date(rows, from_date_str, to_date_str):
     
     filtered = []
     for r in rows:
-        d_val = parse_date_str(r["ngay_gio"])
+        d_val = parse_date_str(r[date_field])
         if d_val:
             if d_from and d_val < d_from:
                 continue
@@ -270,12 +270,17 @@ MAIN_TEMPLATE = """
     <ul class="nav nav-tabs mb-3" id="labTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="tab-cb-btn" data-bs-toggle="tab" data-bs-target="#tab-cb" type="button">
-                🚨 Sổ Báo Cáo KQ Cảnh Báo (SP.01-QTQL.SH.37)
+                🚨 Sổ KQ Cảnh Báo (SP.01-QTQL.SH.37)
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="tab-td-btn" data-bs-toggle="tab" data-bs-target="#tab-td" type="button">
-                📞 Sổ Trao Đổi Thông Tin (SP.01-QTQL.SH.16)
+                📞 Sổ Trao Đổi TT (SP.01-QTQL.SH.16)
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-tc-btn" data-bs-toggle="tab" data-bs-target="#tab-tc" type="button">
+                🚫 Sổ Từ Chối Mẫu (SP.02-QTQL.SH.35)
             </button>
         </li>
         {% if session.get('role') == 'admin' %}
@@ -293,7 +298,7 @@ MAIN_TEMPLATE = """
             <div class="row">
                 <div class="col-lg-4 mb-3">
                     <div class="card p-3">
-                        <h6 class="fw-bold text-danger mb-3">➕ Thêm Báo Cáo Kết Quả Cảnh Báo</h6>
+                        <h6 class="fw-bold text-danger mb-3">➕ Thêm Báo Cáo KQ Cảnh Báo</h6>
                         <form method="POST" action="/add_canh_bao">
                             <div class="row g-2 mb-2">
                                 <div class="col-7">
@@ -356,15 +361,14 @@ MAIN_TEMPLATE = """
                             <h6 class="fw-bold mb-0">📜 Danh Sách Kết Quả Cảnh Báo ({{ canh_bao_list|length }} bản ghi)</h6>
                             <div class="d-flex gap-2 flex-wrap">
                                 <button class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#exportWordModalCB">
-                                    <i class="bi bi-file-earmark-word me-1"></i>Xuất Word (SP.01-QTQL.SH.37)
+                                    <i class="bi bi-file-earmark-word me-1"></i>Xuất Word
                                 </button>
-                                
                                 {% if session.get('role') == 'admin' %}
-                                <a href="/download_template/canh_bao" class="btn btn-outline-secondary btn-sm fw-bold" title="Tải file Excel mẫu với cột Ngày/giờ định dạng dd/mm/yy hh:mm:ss">
-                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>Tải mẫu Excel
+                                <a href="/download_template/canh_bao" class="btn btn-outline-secondary btn-sm fw-bold">
+                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>Mẫu Excel
                                 </a>
                                 <button class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#importModalCB">
-                                    <i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp dữ liệu Excel
+                                    <i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp Excel
                                 </button>
                                 {% endif %}
                                 <a href="/export/canh_bao" class="btn btn-outline-success btn-sm fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>CSV</a>
@@ -422,7 +426,7 @@ MAIN_TEMPLATE = """
             <div class="row">
                 <div class="col-lg-4 mb-3">
                     <div class="card p-3">
-                        <h6 class="fw-bold text-primary mb-3">➕ Thêm Nhật Ký Trao Đổi Thủ Công</h6>
+                        <h6 class="fw-bold text-primary mb-3">➕ Thêm Nhật Ký Trao Đổi</h6>
                         <form method="POST" action="/add_trao_doi">
                             <div class="row g-2 mb-2">
                                 <div class="col-7">
@@ -454,7 +458,7 @@ MAIN_TEMPLATE = """
                             </div>
                             <div class="mb-2">
                                 <label class="form-label small fw-bold">Yêu cầu</label>
-                                <input type="text" name="yeu_cau" class="form-control form-control-sm" placeholder="VD: Lấy lại mẫu, bổ sung thông tin...">
+                                <input type="text" name="yeu_cau" class="form-control form-control-sm" placeholder="VD: Lấy lại mẫu...">
                             </div>
                             <div class="mb-2">
                                 <label class="form-label small fw-bold">Kết quả trao đổi</label>
@@ -471,19 +475,18 @@ MAIN_TEMPLATE = """
 
                 <div class="col-lg-8">
                     <div class="card p-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <h6 class="fw-bold mb-0">📜 Nhật Ký Trao Đổi Thông Tin ({{ trao_doi_list|length }} bản ghi)</h6>
                             <div class="d-flex gap-2 flex-wrap">
                                 <button class="btn btn-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#exportWordModalTD">
-                                    <i class="bi bi-file-earmark-word me-1"></i>Xuất Word (SP.01-QTQL.SH.16)
+                                    <i class="bi bi-file-earmark-word me-1"></i>Xuất Word
                                 </button>
-                                
                                 {% if session.get('role') == 'admin' %}
-                                <a href="/download_template/trao_doi" class="btn btn-outline-secondary btn-sm fw-bold" title="Tải file Excel mẫu với cột Ngày/giờ định dạng dd/mm/yy hh:mm:ss">
-                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>Tải mẫu Excel
+                                <a href="/download_template/trao_doi" class="btn btn-outline-secondary btn-sm fw-bold">
+                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>Mẫu Excel
                                 </a>
                                 <button class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#importModalTD">
-                                    <i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp dữ liệu Excel
+                                    <i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp Excel
                                 </button>
                                 {% endif %}
                                 <a href="/export/trao_doi" class="btn btn-outline-success btn-sm fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>CSV</a>
@@ -530,13 +533,136 @@ MAIN_TEMPLATE = """
             </div>
         </div>
 
-        <!-- TAB 3: QUẢN LÝ THÀNH VIÊN & MẬT KHẨU (CHỈ ADMIN) -->
+        <!-- TAB 3: TỪ CHỐI MẪU (MỚI) -->
+        <div class="tab-pane fade" id="tab-tc" role="tabpanel">
+            <div class="row">
+                <div class="col-lg-4 mb-3">
+                    <div class="card p-3">
+                        <h6 class="fw-bold text-warning text-dark mb-3">➕ Thêm Bản Ghi Từ Chối Mẫu</h6>
+                        <form method="POST" action="/add_tu_choi">
+                            <div class="row g-2 mb-2">
+                                <div class="col-7">
+                                    <label class="form-label small fw-bold">Thời gian</label>
+                                    <input type="text" name="thoi_gian" class="form-control form-control-sm" value="{{ now_str }}" required>
+                                </div>
+                                <div class="col-5">
+                                    <label class="form-label small fw-bold">Khoa/Phòng</label>
+                                    <input type="text" name="khoa" class="form-control form-control-sm" placeholder="VD: C1-3" required>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-bold">Họ và tên bệnh nhân</label>
+                                <input type="text" name="ten_benh_nhan" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Giới tính</label>
+                                    <select name="gioi_tinh" class="form-select form-select-sm">
+                                        <option value="Nam">Nam</option>
+                                        <option value="Nữ">Nữ</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Năm sinh</label>
+                                    <input type="text" name="nam_sinh" class="form-control form-control-sm" placeholder="VD: 1985">
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-bold">Lý do mẫu không đạt</label>
+                                <textarea name="ly_do" class="form-control form-control-sm" rows="2" placeholder="VD: Mẫu tán huyết, sai tỷ lệ chống đông..." required></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-bold">Cách xử lý</label>
+                                <textarea name="cach_xu_ly" class="form-control form-control-sm" rows="2" placeholder="VD: Đã liên hệ khoa đề nghị lấy lại mẫu..."></textarea>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Người nhận</label>
+                                    <input type="text" name="nguoi_nhan" class="form-control form-control-sm" value="{{ session.get('full_name') }}" required>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Người gửi</label>
+                                    <input type="text" name="nguoi_gui" class="form-control form-control-sm" placeholder="Điều dưỡng gửi">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Ghi chú</label>
+                                <input type="text" name="ghi_chu" class="form-control form-control-sm">
+                            </div>
+                            <button type="submit" class="btn btn-warning w-100 fw-bold text-dark"><i class="bi bi-save me-1"></i>Lưu Bản Ghi Từ Chối Mẫu</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="col-lg-8">
+                    <div class="card p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                            <h6 class="fw-bold mb-0">📜 Danh Sách Mẫu Bị Từ Chối ({{ tu_choi_list|length }} bản ghi)</h6>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-warning text-dark btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#exportWordModalTC">
+                                    <i class="bi bi-file-earmark-word me-1"></i>Xuất Word (SP.02-QTQL.SH.35)
+                                </button>
+                                {% if session.get('role') == 'admin' %}
+                                <a href="/download_template/tu_choi" class="btn btn-outline-secondary btn-sm fw-bold">
+                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>Mẫu Excel
+                                </a>
+                                <button class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#importModalTC">
+                                    <i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp Excel
+                                </button>
+                                {% endif %}
+                                <a href="/export/tu_choi" class="btn btn-outline-success btn-sm fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>CSV</a>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover table-sm align-middle small">
+                                <thead>
+                                    <tr>
+                                        <th>TT</th>
+                                        <th>Thời gian</th>
+                                        <th>Họ tên bệnh nhân</th>
+                                        <th>Năm sinh Nam</th>
+                                        <th>Năm sinh Nữ</th>
+                                        <th>Khoa/Phòng</th>
+                                        <th>Lý do không đạt</th>
+                                        <th>Cách xử lý</th>
+                                        <th>Người nhận</th>
+                                        <th>Người gửi</th>
+                                        <th>Ghi chú</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in tu_choi_list %}
+                                    <tr>
+                                        <td>{{ loop.index }}</td>
+                                        <td class="text-nowrap">{{ row.thoi_gian }}</td>
+                                        <td class="fw-bold">{{ row.ten_benh_nhan }}</td>
+                                        <td class="text-center">{{ row.nam_sinh_nam }}</td>
+                                        <td class="text-center">{{ row.nam_sinh_nu }}</td>
+                                        <td>{{ row.khoa }}</td>
+                                        <td class="text-danger">{{ row.ly_do }}</td>
+                                        <td>{{ row.cach_xu_ly }}</td>
+                                        <td>{{ row.nguoi_nhan }}</td>
+                                        <td>{{ row.nguoi_gui }}</td>
+                                        <td>{{ row.ghi_chu }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="11" class="text-center text-muted py-3">Chưa có bản ghi nào.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: QUẢN LÝ THÀNH VIÊN (CHỈ ADMIN) -->
         {% if session.get('role') == 'admin' %}
         <div class="tab-pane fade" id="tab-users" role="tabpanel">
             <div class="row">
                 <div class="col-lg-4 mb-3">
                     <div class="card p-3">
-                        <h6 class="fw-bold text-success mb-3"><i class="bi bi-person-plus-fill me-1"></i>Tạo Tài Khoản Thành Viên Mới</h6>
+                        <h6 class="fw-bold text-success mb-3"><i class="bi bi-person-plus-fill me-1"></i>Tạo Tài Khoản Mới</h6>
                         <form method="POST" action="/create_user">
                             <div class="mb-2">
                                 <label class="form-label small fw-bold">Họ và tên nhân viên</label>
@@ -575,7 +701,7 @@ MAIN_TEMPLATE = """
                                         <th>Họ và tên</th>
                                         <th>Tên đăng nhập</th>
                                         <th>Vai trò</th>
-                                        <th class="text-center">Quản lý mật khẩu & Thao tác</th>
+                                        <th class="text-center">Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -596,7 +722,7 @@ MAIN_TEMPLATE = """
                                                 <i class="bi bi-key-fill"></i> Đổi MK
                                             </button>
                                             {% if u.username != 'admin' and u.username != session.get('username') %}
-                                            <a href="/delete_user/{{ u.id }}" class="btn btn-sm btn-outline-danger py-0 px-2 ms-1" onclick="return confirm('Bạn có chắc chắn muốn xóa tài khoản {{ u.username }} không?');">
+                                            <a href="/delete_user/{{ u.id }}" class="btn btn-sm btn-outline-danger py-0 px-2 ms-1" onclick="return confirm('Bạn có chắc muốn xóa {{ u.username }}?');">
                                                 <i class="bi bi-trash"></i>
                                             </a>
                                             {% endif %}
@@ -620,7 +746,7 @@ MAIN_TEMPLATE = """
                                                     </div>
                                                     <div class="modal-footer py-2">
                                                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
-                                                        <button type="submit" class="btn btn-warning btn-sm fw-bold">Cập Nhật MK</button>
+                                                        <button type="submit" class="btn btn-warning btn-sm fw-bold">Cập Nhật</button>
                                                     </div>
                                                 </form>
                                             </div>
@@ -638,7 +764,7 @@ MAIN_TEMPLATE = """
     </div>
 </div>
 
-<!-- Modal Xuất Word Sổ Cảnh Báo (Chọn thời gian) -->
+<!-- Modal Xuất Word Sổ Cảnh Báo -->
 <div class="modal fade" id="exportWordModalCB" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -648,7 +774,7 @@ MAIN_TEMPLATE = """
             </div>
             <form method="GET" action="/export_word/canh_bao">
                 <div class="modal-body py-3">
-                    <p class="small text-muted mb-3">Chọn khoảng thời gian cần xuất (để trống nếu muốn xuất toàn bộ dữ liệu):</p>
+                    <p class="small text-muted mb-3">Chọn khoảng thời gian (để trống nếu muốn xuất toàn bộ):</p>
                     <div class="row g-2 mb-2">
                         <div class="col-6">
                             <label class="form-label small fw-bold">Từ ngày</label>
@@ -659,20 +785,17 @@ MAIN_TEMPLATE = """
                             <input type="date" name="to_date" class="form-control form-control-sm">
                         </div>
                     </div>
-                    <div class="small text-info mt-2">
-                        <i class="bi bi-info-circle me-1"></i>Khi chọn ngày, dòng <em>"Từ ngày ... Đến ngày ..."</em> trên tiêu đề văn bản Word sẽ được tự động điền chính xác.
-                    </div>
                 </div>
                 <div class="modal-footer py-2">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
-                    <button type="submit" class="btn btn-danger btn-sm fw-bold"><i class="bi bi-download me-1"></i>Tải File Word Ngay</button>
+                    <button type="submit" class="btn btn-danger btn-sm fw-bold"><i class="bi bi-download me-1"></i>Tải File Word</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- Modal Xuất Word Sổ Trao Đổi (Chọn thời gian) -->
+<!-- Modal Xuất Word Sổ Trao Đổi -->
 <div class="modal fade" id="exportWordModalTD" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -682,7 +805,7 @@ MAIN_TEMPLATE = """
             </div>
             <form method="GET" action="/export_word/trao_doi">
                 <div class="modal-body py-3">
-                    <p class="small text-muted mb-3">Chọn khoảng thời gian cần xuất (để trống nếu muốn xuất toàn bộ dữ liệu):</p>
+                    <p class="small text-muted mb-3">Chọn khoảng thời gian (để trống nếu muốn xuất toàn bộ):</p>
                     <div class="row g-2 mb-2">
                         <div class="col-6">
                             <label class="form-label small fw-bold">Từ ngày</label>
@@ -693,25 +816,53 @@ MAIN_TEMPLATE = """
                             <input type="date" name="to_date" class="form-control form-control-sm">
                         </div>
                     </div>
-                    <div class="small text-info mt-2">
-                        <i class="bi bi-info-circle me-1"></i>Khi chọn ngày, dòng <em>"Từ ngày ... Đến ngày ..."</em> trên tiêu đề văn bản Word sẽ được tự động điền chính xác.
-                    </div>
                 </div>
                 <div class="modal-footer py-2">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
-                    <button type="submit" class="btn btn-primary btn-sm fw-bold"><i class="bi bi-download me-1"></i>Tải File Word Ngay</button>
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold"><i class="bi bi-download me-1"></i>Tải File Word</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- Modal Nạp dữ liệu Excel Sổ Cảnh Báo (Admin) -->
+<!-- Modal Xuất Word Sổ Từ Chối (MỚI) -->
+<div class="modal fade" id="exportWordModalTC" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2 bg-warning text-dark">
+                <h6 class="modal-title fw-bold"><i class="bi bi-file-earmark-word me-1"></i>Xuất Word - Sổ Từ Chối Mẫu (SP.02-QTQL.SH.35)</h6>
+                <button type="button" class="btn-close py-2" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="GET" action="/export_word/tu_choi">
+                <div class="modal-body py-3">
+                    <p class="small text-muted mb-3">Chọn khoảng thời gian (để trống nếu muốn xuất toàn bộ):</p>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Từ ngày</label>
+                            <input type="date" name="from_date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Đến ngày</label>
+                            <input type="date" name="to_date" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-warning btn-sm fw-bold text-dark"><i class="bi bi-download me-1"></i>Tải File Word</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modals Nạp Excel Admin -->
 <div class="modal fade" id="importModalCB" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2 bg-danger text-white">
-                <h6 class="modal-title fw-bold"><i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp Dữ Liệu Excel - Sổ Cảnh Báo</h6>
+                <h6 class="modal-title fw-bold">Nạp Excel - Sổ Cảnh Báo</h6>
                 <button type="button" class="btn-close btn-close-white py-2" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="/import_data/canh_bao" enctype="multipart/form-data">
@@ -723,28 +874,24 @@ MAIN_TEMPLATE = """
                     <div class="form-check form-switch mb-2 p-2 bg-light rounded border">
                         <input class="form-check-input ms-0 me-2" type="checkbox" name="auto_sync" id="importSyncCB" checked>
                         <label class="form-check-label small fw-bold text-primary" for="importSyncCB">
-                            ⚡ Tự động đồng bộ các bản ghi sang Sổ Trao Đổi Thông Tin
+                            ⚡ Tự động đồng bộ sang Sổ Trao Đổi Thông Tin
                         </label>
-                    </div>
-                    <div class="small text-muted">
-                        Chưa có file mẫu? Bấm nút <a href="/download_template/canh_bao" class="fw-bold">Tải mẫu Excel</a> để điền dữ liệu đúng cột trước khi nạp.
                     </div>
                 </div>
                 <div class="modal-footer py-2">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
-                    <button type="submit" class="btn btn-danger btn-sm fw-bold"><i class="bi bi-upload me-1"></i>Tải Dữ Liệu Lên</button>
+                    <button type="submit" class="btn btn-danger btn-sm fw-bold">Nạp Dữ Liệu</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- Modal Nạp dữ liệu Excel Sổ Trao Đổi (Admin) -->
 <div class="modal fade" id="importModalTD" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2 bg-primary text-white">
-                <h6 class="modal-title fw-bold"><i class="bi bi-file-earmark-arrow-up me-1"></i>Nạp Dữ Liệu Excel - Sổ Trao Đổi</h6>
+                <h6 class="modal-title fw-bold">Nạp Excel - Sổ Trao Đổi</h6>
                 <button type="button" class="btn-close btn-close-white py-2" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="/import_data/trao_doi" enctype="multipart/form-data">
@@ -753,20 +900,40 @@ MAIN_TEMPLATE = """
                         <label class="form-label small fw-bold">Chọn file Excel (.xlsx) hoặc file .csv</label>
                         <input type="file" name="file" class="form-control form-control-sm" accept=".xlsx, .xls, .csv" required>
                     </div>
-                    <div class="small text-muted">
-                        Chưa có file mẫu? Bấm nút <a href="/download_template/trao_doi" class="fw-bold">Tải mẫu Excel</a> để điền dữ liệu đúng cột trước khi nạp.
-                    </div>
                 </div>
                 <div class="modal-footer py-2">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
-                    <button type="submit" class="btn btn-primary btn-sm fw-bold"><i class="bi bi-upload me-1"></i>Tải Dữ Liệu Lên</button>
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold">Nạp Dữ Liệu</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- Modal đổi mật khẩu của chính tài khoản đang đăng nhập -->
+<div class="modal fade" id="importModalTC" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2 bg-warning text-dark">
+                <h6 class="modal-title fw-bold">Nạp Excel - Sổ Từ Chối Mẫu</h6>
+                <button type="button" class="btn-close py-2" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/import_data/tu_choi" enctype="multipart/form-data">
+                <div class="modal-body py-3">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Chọn file Excel (.xlsx) hoặc file .csv</label>
+                        <input type="file" name="file" class="form-control form-control-sm" accept=".xlsx, .xls, .csv" required>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-warning btn-sm fw-bold text-dark">Nạp Dữ Liệu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal đổi mật khẩu cá nhân -->
 <div class="modal fade" id="changePassModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -801,11 +968,11 @@ MAIN_TEMPLATE = """
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     if (window.location.hash === '#tab-td') {
-        const tabTrigger = new bootstrap.Tab(document.querySelector('#tab-td-btn'));
-        tabTrigger.show();
+        new bootstrap.Tab(document.querySelector('#tab-td-btn')).show();
+    } else if (window.location.hash === '#tab-tc') {
+        new bootstrap.Tab(document.querySelector('#tab-tc-btn')).show();
     } else if (window.location.hash === '#tab-users' && document.querySelector('#tab-users-btn')) {
-        const tabTrigger = new bootstrap.Tab(document.querySelector('#tab-users-btn'));
-        tabTrigger.show();
+        new bootstrap.Tab(document.querySelector('#tab-users-btn')).show();
     }
 </script>
 </body>
@@ -834,147 +1001,35 @@ def set_table_borders(table):
     </w:tblBorders>""")
     tblPr.append(borders_xml)
 
-def generate_word_canh_bao_fallback(rows, from_str="", to_str=""):
-    doc = docx.Document()
-    section = doc.sections[0]
-    section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
-    section.page_width = Inches(11.69)
-    section.page_height = Inches(8.27)
-    section.top_margin = Inches(0.5)
-    section.bottom_margin = Inches(0.5)
-    section.left_margin = Inches(0.5)
-    section.right_margin = Inches(0.5)
-
-    p_header = doc.add_paragraph()
-    p_header.paragraph_format.space_after = Pt(2)
-    p_header.paragraph_format.line_spacing = 1.0
-    r1 = p_header.add_run("BỘ QUỐC PHÒNG\nBỆNH VIỆN QUÂN Y 175\n")
-    r1.bold = True
-    r1.font.size = Pt(11)
-    r1.font.name = "Times New Roman"
-
-    tbl_top = doc.add_table(rows=1, cols=2)
-    tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tbl_top.autofit = False
-    
-    cell_left = tbl_top.cell(0, 0)
-    cell_left.width = Inches(7.0)
-    p_title = cell_left.paragraphs[0]
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_t1 = p_title.add_run("SỔ\nTHEO DÕI BÁO CÁO KẾT QUẢ CẢNH BÁO\n")
-    r_t1.bold = True
-    r_t1.font.size = Pt(14)
-    r_t1.font.name = "Times New Roman"
-    
-    range_label = f"Từ ngày: {from_str}  Đến ngày: {to_str}" if from_str and to_str else (f"Từ ngày: {from_str}" if from_str else (f"Đến ngày: {to_str}" if to_str else "Từ ngày:……/……/20…   Đến ngày:……/……/20…"))
-    r_t2 = p_title.add_run(f"{range_label}\nNgười quản lý sổ: CN. Phạm Minh Nhi")
-    r_t2.font.size = Pt(11)
-    r_t2.italic = True
-    r_t2.font.name = "Times New Roman"
-
-    cell_right = tbl_top.cell(0, 1)
-    cell_right.width = Inches(3.6)
-    p_code = cell_right.paragraphs[0]
-    p_code.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_code = p_code.add_run("Mã số            : SP.01-QTQL.SH.37\nLần ban hành : 01\nNgày hiệu lực : 02/01/2024")
-    r_code.font.size = Pt(10)
-    r_code.font.name = "Times New Roman"
-
-    doc.add_paragraph().paragraph_format.space_after = Pt(4)
-
-    headers = ["STT", "Ngày/giờ\nbáo cáo", "Khoa", "Người\nbáo cáo", "Người nhận\nbáo cáo", "Tên bệnh nhân", "Mã số\nbệnh nhân", "Nội dung\ntrao đổi", "Kết quả\nbáo cáo", "Ghi chú"]
-    col_widths = [Inches(0.5), Inches(1.1), Inches(0.9), Inches(1.1), Inches(1.1), Inches(1.3), Inches(1.0), Inches(1.6), Inches(1.2), Inches(0.9)]
-    
-    tbl = doc.add_table(rows=1, cols=10)
-    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    set_table_borders(tbl)
-
-    hdr_cells = tbl.rows[0].cells
-    for i, title in enumerate(headers):
-        hdr_cells[i].width = col_widths[i]
-        p = hdr_cells[i].paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_after = Pt(2)
-        p.paragraph_format.space_before = Pt(2)
-        run = p.add_run(title.replace("\\n", "\n"))
-        run.bold = True
-        run.font.size = Pt(9.5)
-        run.font.name = "Times New Roman"
-        set_cell_margins(hdr_cells[i], top=80, bottom=80, left=80, right=80)
-
-    for idx, r in enumerate(rows):
-        row_cells = tbl.add_row().cells
-        vals = [
-            str(idx + 1),
-            r["ngay_gio"] or "",
-            r["khoa"] or "",
-            r["nguoi_bao_cao"] or "",
-            r["nguoi_nhan"] or "",
-            r["ten_benh_nhan"] or "",
-            r["ma_benh_nhan"] or "",
-            r["noi_dung"] or "",
-            r["ket_qua"] or "",
-            r["ghi_chu"] or ""
-        ]
-        for c_idx, val in enumerate(vals):
-            row_cells[c_idx].width = col_widths[c_idx]
-            p = row_cells[c_idx].paragraphs[0]
-            if c_idx in [0, 1, 2, 6]:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            else:
-                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p.paragraph_format.space_after = Pt(2)
-            p.paragraph_format.space_before = Pt(2)
-            run = p.add_run(val)
-            run.font.size = Pt(13)
-            run.font.name = "Times New Roman"
-            if c_idx == 8:
-                run.bold = True
-            set_cell_margins(row_cells[c_idx], top=60, bottom=60, left=80, right=80)
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf
-
+# Xuất Word Sổ Cảnh Báo (Cỡ 18 BOLD, xóa người quản lý sổ, dữ liệu cỡ 13)
 def generate_word_canh_bao(rows, from_str="", to_str=""):
     template_path = "template_canh_bao.docx"
+    doc = docx.Document(template_path) if os.path.exists(template_path) else None
     
-    if os.path.exists(template_path):
-        doc = docx.Document(template_path)
-        table = doc.tables[1]
-    else:
-        return generate_word_canh_bao_fallback(rows, from_str, to_str)
+    if not doc:
+        return io.BytesIO()
 
-    if from_str or to_str:
-        range_text = f"Từ ngày: {from_str}  Đến ngày: {to_str}" if from_str and to_str else (f"Từ ngày: {from_str}" if from_str else f"Đến ngày: {to_str}")
-        for p in doc.paragraphs:
-            if "Từ ngày" in p.text:
-                p.text = range_text
-                if len(p.runs) > 0:
-                    p.runs[0].font.name = "Times New Roman"
-                    p.runs[0].font.size = Pt(11)
-                    p.runs[0].font.italic = True
-                break
+    table = doc.tables[1]
+    range_text = f"Từ ngày: {from_str}  Đến ngày: {to_str}" if from_str and to_str else (f"Từ ngày: {from_str}" if from_str else (f"Đến ngày: {to_str}" if to_str else "Từ ngày:……/……/20…   Đến ngày:……/……/20…"))
+
+    for p in doc.paragraphs:
+        if "Từ ngày" in p.text:
+            p.text = range_text
+            for run in p.runs:
+                run.font.name = "Times New Roman"
+                run.font.size = Pt(18)
+                run.font.bold = True
+                run.font.italic = False
+        elif "Người quản lý sổ" in p.text:
+            p.text = ""
 
     col_mapping = [
-        "ngay_gio",
-        "khoa",
-        "nguoi_bao_cao",
-        "nguoi_nhan",
-        "ten_benh_nhan",
-        "ma_benh_nhan",
-        "noi_dung",
-        "ket_qua",
-        "ghi_chu"
+        "ngay_gio", "khoa", "nguoi_bao_cao", "nguoi_nhan",
+        "ten_benh_nhan", "ma_benh_nhan", "noi_dung", "ket_qua", "ghi_chu"
     ]
 
     for idx, r in enumerate(rows):
-        if idx + 1 < len(table.rows):
-            target_row = table.rows[idx + 1]
-        else:
-            target_row = table.add_row()
-
+        target_row = table.rows[idx + 1] if idx + 1 < len(table.rows) else table.add_row()
         vals = [str(idx + 1)] + [r[k] if r[k] is not None else "" for k in col_mapping]
         for c_idx, val in enumerate(vals):
             cell = target_row.cells[c_idx]
@@ -995,147 +1050,37 @@ def generate_word_canh_bao(rows, from_str="", to_str=""):
     buf.seek(0)
     return buf
 
-def generate_word_trao_doi_fallback(rows, from_str="", to_str=""):
-    doc = docx.Document()
-    section = doc.sections[0]
-    section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
-    section.page_width = Inches(11.69)
-    section.page_height = Inches(8.27)
-    section.top_margin = Inches(0.5)
-    section.bottom_margin = Inches(0.5)
-    section.left_margin = Inches(0.5)
-    section.right_margin = Inches(0.5)
-
-    p_header = doc.add_paragraph()
-    p_header.paragraph_format.space_after = Pt(2)
-    p_header.paragraph_format.line_spacing = 1.0
-    r1 = p_header.add_run("BỘ QUỐC PHÒNG\nBỆNH VIỆN QUÂN Y 175\n")
-    r1.bold = True
-    r1.font.size = Pt(11)
-    r1.font.name = "Times New Roman"
-
-    tbl_top = doc.add_table(rows=1, cols=2)
-    tbl_top.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tbl_top.autofit = False
-    
-    cell_left = tbl_top.cell(0, 0)
-    cell_left.width = Inches(7.0)
-    p_title = cell_left.paragraphs[0]
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_t1 = p_title.add_run("SỔ TRAO ĐỔI THÔNG TIN\n")
-    r_t1.bold = True
-    r_t1.font.size = Pt(14)
-    r_t1.font.name = "Times New Roman"
-    
-    range_label = f"Từ ngày: {from_str}  Đến ngày: {to_str}" if from_str and to_str else (f"Từ ngày: {from_str}" if from_str else (f"Đến ngày: {to_str}" if to_str else "Từ ngày: ……/……/20…   Đến ngày: ……/……/20…"))
-    r_t2 = p_title.add_run(f"{range_label}\nNgười quản lý sổ: …………………………………")
-    r_t2.font.size = Pt(11)
-    r_t2.italic = True
-    r_t2.font.name = "Times New Roman"
-
-    cell_right = tbl_top.cell(0, 1)
-    cell_right.width = Inches(3.6)
-    p_code = cell_right.paragraphs[0]
-    p_code.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r_code = p_code.add_run("Mã số            : SP.01-QTQL.SH.16\nLần ban hành : 01\nNgày hiệu lực : 02/01/2024")
-    r_code.font.size = Pt(10)
-    r_code.font.name = "Times New Roman"
-
-    doc.add_paragraph().paragraph_format.space_after = Pt(4)
-
-    headers = ["NGÀY/ GIỜ", "NGƯỜI GỌI", "NGƯỜI NGHE", "HỌ TÊN BỆNH NHÂN", "KHOA", "NỘI DUNG TRAO ĐỔI", "YÊU CẦU", "KẾT QUẢ TRAO ĐỔI", "GHI CHÚ"]
-    col_widths = [Inches(1.2), Inches(1.1), Inches(1.1), Inches(1.5), Inches(1.0), Inches(1.8), Inches(1.4), Inches(1.3), Inches(0.8)]
-    
-    tbl = doc.add_table(rows=1, cols=9)
-    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    set_table_borders(tbl)
-
-    hdr_cells = tbl.rows[0].cells
-    for i, title in enumerate(headers):
-        hdr_cells[i].width = col_widths[i]
-        p = hdr_cells[i].paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_after = Pt(2)
-        p.paragraph_format.space_before = Pt(2)
-        run = p.add_run(title)
-        run.bold = True
-        run.font.size = Pt(9.5)
-        run.font.name = "Times New Roman"
-        set_cell_margins(hdr_cells[i], top=80, bottom=80, left=80, right=80)
-
-    for idx, r in enumerate(rows):
-        row_cells = tbl.add_row().cells
-        vals = [
-            r["ngay_gio"] or "",
-            r["nguoi_goi"] or "",
-            r["nguoi_nghe"] or "",
-            r["ten_benh_nhan"] or "",
-            r["khoa"] or "",
-            r["noi_dung"] or "",
-            r["yeu_cau"] or "",
-            r["ket_qua"] or "",
-            r["ghi_chu"] or ""
-        ]
-        for c_idx, val in enumerate(vals):
-            row_cells[c_idx].width = col_widths[c_idx]
-            p = row_cells[c_idx].paragraphs[0]
-            if c_idx in [0, 4]:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            else:
-                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p.paragraph_format.space_after = Pt(2)
-            p.paragraph_format.space_before = Pt(2)
-            run = p.add_run(val)
-            run.font.size = Pt(13)
-            run.font.name = "Times New Roman"
-            set_cell_margins(row_cells[c_idx], top=60, bottom=60, left=80, right=80)
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf
-
+# Xuất Word Sổ Trao Đổi (Cỡ 18 BOLD, xóa người quản lý sổ, dữ liệu cỡ 13)
 def generate_word_trao_doi(rows, from_str="", to_str=""):
     template_path = "template_trao_doi.docx"
+    doc = docx.Document(template_path) if os.path.exists(template_path) else None
     
-    if os.path.exists(template_path):
-        doc = docx.Document(template_path)
-        table = doc.tables[1]
-    else:
-        return generate_word_trao_doi_fallback(rows, from_str, to_str)
+    if not doc:
+        return io.BytesIO()
 
-    if from_str or to_str:
-        range_text = f"Từ ngày {from_str} đến ngày {to_str}" if from_str and to_str else (f"Từ ngày {from_str}" if from_str else f"Đến ngày {to_str}")
-        if len(doc.tables) > 0:
-            for r in doc.tables[0].rows:
-                for c in r.cells:
-                    for p in c.paragraphs:
-                        if "Từ ngày" in p.text:
-                            p.text = f"{range_text}\nNgười quản lý sổ: …………………………………"
-                            for run in p.runs:
-                                run.font.name = "Times New Roman"
-                                run.font.size = Pt(11)
-                                run.font.italic = True
-                            break
+    table = doc.tables[1]
+    range_text = f"Từ ngày: {from_str}  Đến ngày: {to_str}" if from_str and to_str else (f"Từ ngày: {from_str}" if from_str else (f"Đến ngày: {to_str}" if to_str else "Từ ngày: ……/……/20…   Đến ngày: ……/……/20…"))
+
+    if len(doc.tables) > 0:
+        for r in doc.tables[0].rows:
+            for c in r.cells:
+                for p in c.paragraphs:
+                    if "Từ ngày" in p.text or "Người quản lý sổ" in p.text:
+                        p.text = range_text
+                        for run in p.runs:
+                            run.font.name = "Times New Roman"
+                            run.font.size = Pt(18)
+                            run.font.bold = True
+                            run.font.italic = False
+                        break
 
     col_mapping = [
-        "ngay_gio",
-        "nguoi_goi",
-        "nguoi_nghe",
-        "ten_benh_nhan",
-        "khoa",
-        "noi_dung",
-        "yeu_cau",
-        "ket_qua",
-        "ghi_chu"
+        "ngay_gio", "nguoi_goi", "nguoi_nghe", "ten_benh_nhan",
+        "khoa", "noi_dung", "yeu_cau", "ket_qua", "ghi_chu"
     ]
 
     for idx, r in enumerate(rows):
-        if idx + 1 < len(table.rows):
-            target_row = table.rows[idx + 1]
-        else:
-            target_row = table.add_row()
-
+        target_row = table.rows[idx + 1] if idx + 1 < len(table.rows) else table.add_row()
         vals = [r[k] if r[k] is not None else "" for k in col_mapping]
         for c_idx, val in enumerate(vals):
             cell = target_row.cells[c_idx]
@@ -1154,7 +1099,57 @@ def generate_word_trao_doi(rows, from_str="", to_str=""):
     buf.seek(0)
     return buf
 
-# ----------------- TẠO BIỂU MẪU EXCEL CHO ADMIN -----------------
+# Xuất Word Sổ Từ Chối Mẫu (SP.02-QTQL.SH.35)
+def generate_word_tu_choi(rows, from_str="", to_str=""):
+    template_path = "template_tu_choi.docx"
+    doc = docx.Document(template_path) if os.path.exists(template_path) else None
+    
+    if not doc:
+        return io.BytesIO()
+
+    # Cập nhật thời gian cỡ 18 bold và xóa Người quản lý sổ
+    range_text = f"Từ ngày: {from_str}  Đến ngày: {to_str}" if from_str and to_str else (f"Từ ngày: {from_str}" if from_str else (f"Đến ngày: {to_str}" if to_str else "Từ ngày: ……/……/20…   Đến ngày: ……/……/20…"))
+    
+    if len(doc.tables) > 0:
+        cell_t0 = doc.tables[0].rows[1].cells[0]
+        for p in cell_t0.paragraphs:
+            if "Từ ngày" in p.text:
+                p.text = range_text
+                for run in p.runs:
+                    run.font.name = "Times New Roman"
+                    run.font.size = Pt(18)
+                    run.font.bold = True
+                    run.font.italic = False
+            elif "Người quản lý sổ" in p.text:
+                p.text = ""
+
+    table = doc.tables[1]
+    col_mapping = [
+        "thoi_gian", "ten_benh_nhan", "nam_sinh_nam", "nam_sinh_nu",
+        "khoa", "ly_do", "cach_xu_ly", "nguoi_nhan", "nguoi_gui", "ghi_chu"
+    ]
+
+    for idx, r in enumerate(rows):
+        target_row = table.rows[idx + 2] if idx + 2 < len(table.rows) else table.add_row()
+        vals = [str(idx + 1)] + [r[k] if r[k] is not None else "" for k in col_mapping]
+        for c_idx, val in enumerate(vals):
+            cell = target_row.cells[c_idx]
+            cell.text = str(val)
+            p = cell.paragraphs[0]
+            if c_idx in [0, 1, 3, 4, 5]:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            else:
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            for run in p.runs:
+                run.font.name = "Times New Roman"
+                run.font.size = Pt(13)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+# ----------------- TẠO BIỂU MẪU EXCEL ADMIN -----------------
 
 def make_excel_template(book_type):
     wb = openpyxl.Workbook()
@@ -1181,7 +1176,7 @@ def make_excel_template(book_type):
             now_sample, "HSCC", "KTV Hải", "BS Minh",
             "NGUYỄN VĂN A", "24001234", "Báo động đỏ điện giải", "K+ 7.2 mmol/L", "Khoa đã tiếp nhận"
         ]
-    else:
+    elif book_type == "trao_doi":
         ws.title = "Mau_Nhap_Trao_Doi"
         headers = [
             "Ngày/giờ", "Người gọi", "Người nghe", "Họ tên bệnh nhân",
@@ -1190,6 +1185,16 @@ def make_excel_template(book_type):
         sample = [
             now_sample, "KTV Hải", "ĐD Lan", "TRẦN THỊ B",
             "C1-3", "Mẫu vỡ hồng cầu", "Đề nghị lấy lại mẫu", "Đã đồng ý gửi lại", "Mẫu máu tĩnh mạch"
+        ]
+    else:
+        ws.title = "Mau_Nhap_Tu_Choi_Mau"
+        headers = [
+            "Thời gian", "Họ và tên bệnh nhân", "Năm sinh Nam", "Năm sinh Nữ",
+            "Khoa/Phòng", "Lý do mẫu không đạt", "Cách xử lý", "Người nhận", "Người gửi", "Ghi chú"
+        ]
+        sample = [
+            now_sample, "NGUYỄN VĂN A", "1980", "",
+            "C1-3", "Mẫu vỡ hồng cầu", "Báo khoa lấy lại mẫu", "KTV Hải", "ĐD Lan", "Lấy lại tube Heparin"
         ]
 
     ws.append(headers)
@@ -1206,10 +1211,8 @@ def make_excel_template(book_type):
         d_cell.font = data_font
         d_cell.alignment = Alignment(vertical="center")
         d_cell.border = thin_border
-
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 24
 
-    # Cài đặt định dạng dd/mm/yy hh:mm:ss cho toàn bộ cột 1 từ dòng 2 đến 200
     for r in range(2, 201):
         cell_dt = ws.cell(row=r, column=1)
         cell_dt.number_format = 'dd/mm/yy hh:mm:ss'
@@ -1253,8 +1256,9 @@ def index():
     with get_db() as conn:
         cb = conn.execute("SELECT * FROM canh_bao ORDER BY id DESC").fetchall()
         td = conn.execute("SELECT * FROM trao_doi ORDER BY id DESC").fetchall()
+        tc = conn.execute("SELECT * FROM tu_choi ORDER BY id DESC").fetchall()
         users = conn.execute("SELECT id, username, full_name, role FROM users ORDER BY id ASC").fetchall()
-    return render_template_string(MAIN_TEMPLATE, now_str=now_str, canh_bao_list=cb, trao_doi_list=td, users_list=users)
+    return render_template_string(MAIN_TEMPLATE, now_str=now_str, canh_bao_list=cb, trao_doi_list=td, tu_choi_list=tc, users_list=users)
 
 @app.route("/add_canh_bao", methods=["POST"])
 @login_required
@@ -1291,15 +1295,8 @@ def sync_one(cb_id):
         cb = conn.execute("SELECT * FROM canh_bao WHERE id = ?", (cb_id,)).fetchone()
         if cb:
             sync_canh_bao_to_trao_doi(
-                conn,
-                cb["ngay_gio"],
-                cb["nguoi_bao_cao"],
-                cb["nguoi_nhan"],
-                cb["ten_benh_nhan"],
-                cb["khoa"],
-                cb["ket_qua"],
-                cb["noi_dung"],
-                cb["ghi_chu"]
+                conn, cb["ngay_gio"], cb["nguoi_bao_cao"], cb["nguoi_nhan"],
+                cb["ten_benh_nhan"], cb["khoa"], cb["ket_qua"], cb["noi_dung"], cb["ghi_chu"]
             )
             flash(f"✅ Đã đồng bộ bản ghi BN {cb['ten_benh_nhan']} sang Sổ Trao Đổi!", "info")
     return redirect(url_for("index") + "#tab-td")
@@ -1312,18 +1309,36 @@ def add_trao_doi():
             INSERT INTO trao_doi (ngay_gio, nguoi_goi, nguoi_nghe, ten_benh_nhan, khoa, noi_dung, yeu_cau, ket_qua, ghi_chu)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            request.form.get("ngay_gio"),
-            request.form.get("nguoi_goi"),
-            request.form.get("nguoi_nghe"),
-            request.form.get("ten_benh_nhan"),
-            request.form.get("khoa"),
-            request.form.get("noi_dung"),
-            request.form.get("yeu_cau"),
-            request.form.get("ket_qua"),
-            request.form.get("ghi_chu")
+            request.form.get("ngay_gio"), request.form.get("nguoi_goi"), request.form.get("nguoi_nghe"),
+            request.form.get("ten_benh_nhan"), request.form.get("khoa"), request.form.get("noi_dung"),
+            request.form.get("yeu_cau"), request.form.get("ket_qua"), request.form.get("ghi_chu")
         ))
         flash("✅ Đã lưu cuộc trao đổi thông tin thành công!", "success")
     return redirect(url_for("index") + "#tab-td")
+
+@app.route("/add_tu_choi", methods=["POST"])
+@login_required
+def add_tu_choi():
+    thoi_gian = request.form.get("thoi_gian")
+    ten_benh_nhan = request.form.get("ten_benh_nhan")
+    gioi_tinh = request.form.get("gioi_tinh", "Nam")
+    nam_sinh = request.form.get("nam_sinh", "").strip()
+    nam_sinh_nam = nam_sinh if gioi_tinh == "Nam" else ""
+    nam_sinh_nu = nam_sinh if gioi_tinh == "Nữ" else ""
+    khoa = request.form.get("khoa")
+    ly_do = request.form.get("ly_do")
+    cach_xu_ly = request.form.get("cach_xu_ly")
+    nguoi_nhan = request.form.get("nguoi_nhan")
+    nguoi_gui = request.form.get("nguoi_gui")
+    ghi_chu = request.form.get("ghi_chu")
+
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO tu_choi (thoi_gian, ten_benh_nhan, nam_sinh_nam, nam_sinh_nu, khoa, ly_do, cach_xu_ly, nguoi_nhan, nguoi_gui, ghi_chu)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (thoi_gian, ten_benh_nhan, nam_sinh_nam, nam_sinh_nu, khoa, ly_do, cach_xu_ly, nguoi_nhan, nguoi_gui, ghi_chu))
+        flash("✅ Đã lưu bản ghi từ chối mẫu thành công!", "success")
+    return redirect(url_for("index") + "#tab-tc")
 
 # ----------------- QUẢN LÝ TÀI KHOẢN (CHỈ ADMIN) -----------------
 
@@ -1429,7 +1444,13 @@ def delete_user(user_id):
 @admin_required
 def download_template(book_type):
     buf = make_excel_template(book_type)
-    name = "Mau_Nhap_So_Canh_Bao_SP01_QTQL_SH_37.xlsx" if book_type == "canh_bao" else "Mau_Nhap_So_Trao_Doi_SP01_QTQL_SH_16.xlsx"
+    if book_type == "canh_bao":
+        name = "Mau_Nhap_So_Canh_Bao_SP01_QTQL_SH_37.xlsx"
+    elif book_type == "trao_doi":
+        name = "Mau_Nhap_So_Trao_Doi_SP01_QTQL_SH_16.xlsx"
+    else:
+        name = "Mau_Nhap_So_Tu_Choi_Mau_SP02_QTQL_SH_35.xlsx"
+
     return send_file(
         buf,
         as_attachment=True,
@@ -1454,11 +1475,7 @@ def import_data(book_type):
     filename = secure_filename(file.filename).lower()
 
     try:
-        if filename.endswith(".csv"):
-            df = pd.read_csv(file)
-        else:
-            df = pd.read_excel(file)
-
+        df = pd.read_csv(file) if filename.endswith(".csv") else pd.read_excel(file)
         imported_count = 0
 
         with get_db() as conn:
@@ -1473,12 +1490,12 @@ def import_data(book_type):
                     conn.execute("""
                         INSERT INTO canh_bao (ngay_gio, khoa, nguoi_bao_cao, nguoi_nhan, ten_benh_nhan, ma_benh_nhan, noi_dung, ket_qua, ghi_chu)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (ngay_gio, khoa, nguoi_bc, nguoi_nhan, ten_bn, ma_bn, noi_dung, ket_qua, ghi_chu))
+                    """, (ngay_gio, khoa, nguoi_bao_cao, nguoi_nhan, ten_bn, ma_bn, noi_dung, ket_qua, ghi_chu))
 
                     if auto_sync:
                         sync_canh_bao_to_trao_doi(conn, ngay_gio, nguoi_bc, nguoi_nhan, ten_bn, khoa, ket_qua, noi_dung, ghi_chu)
                     imported_count += 1
-            else:
+            elif book_type == "trao_doi":
                 for _, row in df.iterrows():
                     vals = list(row.values)[:9]
                     while len(vals) < 9:
@@ -1491,13 +1508,26 @@ def import_data(book_type):
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (ngay_gio, nguoi_goi, nguoi_nghe, ten_bn, khoa, noi_dung, yeu_cau, ket_qua, ghi_chu))
                     imported_count += 1
+            else:
+                for _, row in df.iterrows():
+                    vals = list(row.values)[:10]
+                    while len(vals) < 10:
+                        vals.append("")
+                    thoi_gian, ten_bn, nam_nam, nam_nu, khoa, ly_do, cach_xl, nguoi_nhan, nguoi_gui, ghi_chu = [format_cell_value(v) for v in vals]
+                    if not thoi_gian and not ten_bn:
+                        continue
+                    conn.execute("""
+                        INSERT INTO tu_choi (thoi_gian, ten_benh_nhan, nam_sinh_nam, nam_sinh_nu, khoa, ly_do, cach_xu_ly, nguoi_nhan, nguoi_gui, ghi_chu)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (thoi_gian, ten_bn, nam_nam, nam_nu, khoa, ly_do, cach_xl, nguoi_nhan, nguoi_gui, ghi_chu))
+                    imported_count += 1
 
         flash(f"🎉 Đã nạp thành công {imported_count} bản ghi từ file vào hệ thống!", "success")
     except Exception as e:
         flash(f"Lỗi khi đọc file nạp dữ liệu: {str(e)}", "danger")
 
-    redirect_tab = "#tab-td" if book_type == "trao_doi" else "#tab-cb"
-    return redirect(url_for("index") + redirect_tab)
+    tab_map = {"canh_bao": "#tab-cb", "trao_doi": "#tab-td", "tu_choi": "#tab-tc"}
+    return redirect(url_for("index") + tab_map.get(book_type, ""))
 
 # ----------------- XUẤT WORD & CSV -----------------
 
@@ -1513,14 +1543,19 @@ def export_word(book_type):
     with get_db() as conn:
         if book_type == "canh_bao":
             all_rows = conn.execute("SELECT * FROM canh_bao ORDER BY id ASC").fetchall()
-            rows = filter_records_by_date(all_rows, from_date, to_date)
+            rows = filter_records_by_date(all_rows, from_date, to_date, "ngay_gio")
             buf = generate_word_canh_bao(rows, from_str, to_str)
             filename = f"SP.01-QTQL.SH.37-So_theo_doi_bao_cao_KQ_canh_bao_{datetime.now().strftime('%Y%m%d')}.docx"
-        else:
+        elif book_type == "trao_doi":
             all_rows = conn.execute("SELECT * FROM trao_doi ORDER BY id ASC").fetchall()
-            rows = filter_records_by_date(all_rows, from_date, to_date)
+            rows = filter_records_by_date(all_rows, from_date, to_date, "ngay_gio")
             buf = generate_word_trao_doi(rows, from_str, to_str)
             filename = f"SP.01-QTQL.SH.16-So_trao_doi_thong_tin_{datetime.now().strftime('%Y%m%d')}.docx"
+        else:
+            all_rows = conn.execute("SELECT * FROM tu_choi ORDER BY id ASC").fetchall()
+            rows = filter_records_by_date(all_rows, from_date, to_date, "thoi_gian")
+            buf = generate_word_tu_choi(rows, from_str, to_str)
+            filename = f"SP.02-QTQL.SH.35-So_tu_choi_mau_{datetime.now().strftime('%Y%m%d')}.docx"
 
     return send_file(
         buf,
@@ -1542,12 +1577,18 @@ def export_csv(book_type):
             for idx, r in enumerate(rows, 1):
                 writer.writerow([idx, r["ngay_gio"], r["khoa"], r["nguoi_bao_cao"], r["nguoi_nhan"], r["ten_benh_nhan"], r["ma_benh_nhan"], r["noi_dung"], r["ket_qua"], r["ghi_chu"]])
             filename = f"So_Canh_Bao_SP01_QTQL_SH_37_{datetime.now().strftime('%Y%m%d')}.csv"
-        else:
+        elif book_type == "trao_doi":
             writer.writerow(["STT", "Ngày/Giờ", "Người gọi", "Người nghe", "Tên bệnh nhân", "Khoa", "Nội dung trao đổi", "Yêu cầu", "Kết quả trao đổi", "Ghi chú"])
             rows = conn.execute("SELECT * FROM trao_doi ORDER BY id ASC").fetchall()
             for idx, r in enumerate(rows, 1):
                 writer.writerow([idx, r["ngay_gio"], r["nguoi_goi"], r["nguoi_nghe"], r["ten_benh_nhan"], r["khoa"], r["noi_dung"], r["yeu_cau"], r["ket_qua"], r["ghi_chu"]])
             filename = f"So_Trao_Doi_SP01_QTQL_SH_16_{datetime.now().strftime('%Y%m%d')}.csv"
+        else:
+            writer.writerow(["TT", "Thời gian", "Họ và tên bệnh nhân", "Năm sinh Nam", "Năm sinh Nữ", "Khoa/Phòng", "Lý do mẫu không đạt", "Cách xử lý", "Người nhận", "Người gửi", "Ghi chú"])
+            rows = conn.execute("SELECT * FROM tu_choi ORDER BY id ASC").fetchall()
+            for idx, r in enumerate(rows, 1):
+                writer.writerow([idx, r["thoi_gian"], r["ten_benh_nhan"], r["nam_sinh_nam"], r["nam_sinh_nu"], r["khoa"], r["ly_do"], r["cach_xu_ly"], r["nguoi_nhan"], r["nguoi_gui"], r["ghi_chu"]])
+            filename = f"So_Tu_Choi_Mau_SP02_QTQL_SH_35_{datetime.now().strftime('%Y%m%d')}.csv"
 
     return Response(
         output.getvalue(),
