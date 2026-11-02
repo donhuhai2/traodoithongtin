@@ -1030,8 +1030,9 @@ def generate_word_canh_bao(rows, from_str="", to_str=""):
                 p.text = "Người quản lý sổ:  CN. Phạm Minh Nhi"
             for run in p.runs:
                 run.font.name = "Times New Roman"
-                run.font.size = Pt(12)
-                run.font.bold = False
+                run.font.size = Pt(18)
+                run.font.bold = True
+                run.font.italic = False
 
     col_mapping = [
         "ngay_gio", "khoa", "nguoi_bao_cao", "nguoi_nhan",
@@ -1089,8 +1090,9 @@ def generate_word_trao_doi(rows, from_str="", to_str=""):
                     p.text = "Người quản lý sổ: ……………………………."
                 for run in p.runs:
                     run.font.name = "Times New Roman"
-                    run.font.size = Pt(12)
-                    run.font.bold = False
+                    run.font.size = Pt(18)
+                    run.font.bold = True
+                    run.font.italic = False
 
     col_mapping = [
         "ngay_gio", "nguoi_goi", "nguoi_nghe", "ten_benh_nhan",
@@ -1146,8 +1148,9 @@ def generate_word_tu_choi(rows, from_str="", to_str=""):
                     p.text = "Người quản lý sổ: ……………………………."
                 for run in p.runs:
                     run.font.name = "Times New Roman"
-                    run.font.size = Pt(12)
-                    run.font.bold = False
+                    run.font.size = Pt(18)
+                    run.font.bold = True
+                    run.font.italic = False
 
     col_mapping = [
         "thoi_gian", "ten_benh_nhan", "nam_sinh_nam", "nam_sinh_nu",
